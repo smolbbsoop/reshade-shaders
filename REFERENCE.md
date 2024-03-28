@@ -130,7 +130,7 @@ sampler2D samplerColor
 	AddressW = CLAMP;
 
 	// The magnification, minification and mipmap filtering types.
-	// Available values: POINT, LINEAR
+	// Available values: POINT, LINEAR, ANISOTROPIC
 	MagFilter = LINEAR;
 	MinFilter = LINEAR;
 	MipFilter = LINEAR;
@@ -197,7 +197,10 @@ Annotations to customize UI appearance:
  * ui_category_toggle: Set to true to make the boolean value of this variable toggle visibility of the whole category.
  * ui_spacing: Adds space before the UI widget (multiplied by the value of the annotation).
  * ui_units: Adds units description on the slider/drag bar (only used when `ui_type = "drag"` or `ui_type = "slider"`)
- * hidden: Set to true to hide this technique in the UI.
+ * hidden: Set to true to hide this variable in the UI.
+ * noedit: Set to true to show this variable in the UI, but prevent modification.
+ * nosave: Set to true to prevent the value of this variable from being saved to presets.
+ * noreset: Set to true to prevent resetting this variable to its default in the UI.
 
 Annotations are also used to request special runtime values (via the `source` annotation):
 
@@ -286,6 +289,13 @@ namespace MyNamespace
 
 ### User functions
 
+Attributes:
+
+ * ``[numthreads(X, Y, Z)]``  
+ Specifies the local thread group size, with X, Y and Z being the size in the corresponding dimension.
+ * ``[shader("vertex")]``/``[shader("pixel")]``/``[shader("compute")]``  
+ Optionally specifies the shader type this function implements.
+
 Parameter qualifiers:
 
  * ``in`` Declares an input parameter. Default and implicit if none is used. Functions expect these to be filled with a value.
@@ -318,6 +328,7 @@ Supported flow-control statements:
 // They are ignored on non-entry-point functions (those not used in any pass below).
 // Semantics starting with "SV_" are system value semantics and serve a special meaning.
 // The following vertex shader demonstrates how to generate a simple fullscreen triangle with the three vertices provided by ReShade (http://redd.it/2j17wk):
+[shader("vertex")]
 void ExampleVS(uint id : SV_VertexID, out float4 position : SV_Position, out float2 texcoord : TEXCOORD0)
 {
 	texcoord.x = (id == 2) ? 2.0 : 0.0;
@@ -326,12 +337,14 @@ void ExampleVS(uint id : SV_VertexID, out float4 position : SV_Position, out flo
 }
 
 // The following pixel shader simply returns the color of the games output again without modifying it (via the "color" output parameter):
+[shader("pixel")]
 void ExamplePS0(float4 pos : SV_Position, float2 texcoord : TEXCOORD0, out float4 color : SV_Target)
 {
 	color = tex2D(samplerColor, texcoord);
 }
 
 // The following pixel shader takes the output of the previous pass and adds the depth buffer content to the right screen side.
+[shader("pixel")]
 float4 ExamplePS1(float4 pos : SV_Position, float2 texcoord : TEXCOORD0) : SV_Target
 {
 	// Here color information is sampled with "samplerTarget" and thus from "texTarget" (see sampler declaration above),
@@ -356,6 +369,7 @@ float4 ExamplePS1(float4 pos : SV_Position, float2 texcoord : TEXCOORD0) : SV_Ta
 
 // The following compute shader uses shared memory within a thread group:
 groupshared int sharedMem[64];
+[shader("compute")]
 void ExampleCS0(uint3 tid : SV_GroupThreadID)
 {
 	if (tid.y == 0)
@@ -366,6 +380,7 @@ void ExampleCS0(uint3 tid : SV_GroupThreadID)
 }
 
 // The following compute shader writes a color gradient to the "texTarget" texture:
+[shader("compute")]
 void ExampleCS1(uint3 id : SV_DispatchThreadID, uint3 tid : SV_GroupThreadID)
 {
 	tex2Dstore(storageTarget, id.xy, float4(tid.xy / float2(20 * 64, 2 * 8), 0, 1));
@@ -398,6 +413,14 @@ In addition to these, ReShade FX provides a few additional ones:
  Samples a texture on a specific mipmap level.\
  The accepted coordinates are in the form `float4(x, y, 0, lod)`.\
  See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplelevel.
+ * ``T tex1Dgrad(sampler1D<T> s, float coords, float ddx, float ddy)``
+ * ``T tex1Dgrad(sampler1D<T> s, float coords, float ddx, float ddy, int offset)``
+ * ``T tex2Dgrad(sampler2D<T> s, float2 coords, float2 ddx, float2 ddy)``
+ * ``T tex2Dgrad(sampler2D<T> s, float2 coords, float2 ddx, float2 ddy, int2 offset)``
+ * ``T tex3Dgrad(sampler3D<T> s, float3 coords, float3 ddx, float3 ddy)``
+ * ``T tex3Dgrad(sampler3D<T> s, float3 coords, float3 ddx, float3 ddy, int3 offset)``  
+ Samples a texture using a gradient to influence the way the sample location is calculated.\
+ See also https://learn.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-samplegrad.
  * ``T tex1Dfetch(sampler1D<T> s, int coords)``  
  * ``T tex1Dfetch(sampler1D<T> s, int coords, int lod)``  
  * ``T tex1Dfetch(storage1D<T> s, int coords)``  
@@ -408,7 +431,7 @@ In addition to these, ReShade FX provides a few additional ones:
  * ``T tex3Dfetch(sampler3D<T> s, int3 coords, int lod)``  
  * ``T tex3Dfetch(storage3D<T> s, int3 coords)``  
  Fetches a value from the texture directly without any sampling.\
- See also https://docs.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-load.
+ See also https://docs.microsoft.com/windows/win32/direct3dhlsl/dx-graphics-hlsl-to-load.
  * ``float4 tex2DgatherR(sampler2D s, float2 coords)``  
  * ``float4 tex2DgatherR(sampler2D s, float2 coords, int2 offset)``  
  * ``float4 tex2DgatherG(sampler2D s, float2 coords)``  
@@ -618,7 +641,9 @@ technique Example < ui_tooltip = "This is an example!"; >
 	}
 	pass p1
 	{
+		// Alternatively just "ComputeShader = ExampleCS1" if the thread group size was specified via the "numthreads" function attribute
 		ComputeShader = ExampleCS1<64,8>;
+
 		DispatchSizeX = 20; // 20 * 64 threads total in X dimension
 		DispatchSizeY = 2;  //  2 *  8 threads total in Y dimension
 	}
